@@ -45,10 +45,8 @@ class BSplineDrawer(QWidget):
         # Prepare points
         x, y = zip(*points)
 
-        if closed:
-            # Repeat points to force continuity at the ends
-            x = list(x) + list(x[:3])
-            y = list(y) + list(y[:3])
+        # No need to manually add points
+        pass
 
         # Parametrize the spline
         tck, u = splprep([x, y], s=0, per=closed)
