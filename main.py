@@ -20,16 +20,61 @@ class BSplineDrawer(QWidget):
         self.save_button.clicked.connect(self.save_svg)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            pos = event.pos()
-            # Check if clicking near an existing point
-            for i, (x, y) in enumerate(self.points):
-                if (QPointF(x, y) - pos).manhattanLength() < 10:
-                    self.dragging_index = i
-                    return
-            # Otherwise add a new point
-            self.points.append((pos.x(), pos.y()))
-            self.update()
+        if event.button() != Qt.LeftButton:
+            return
+
+        pos = event.pos()
+        px, py = pos.x(), pos.y()
+
+        # 1. Check if clicking near an existing point (for dragging)
+        for i, (x, y) in enumerate(self.points):
+            if (QPointF(x, y) - pos).manhattanLength() < 10:
+                self.dragging_index = i
+                return
+
+        # 2. Check if clicking near a line segment (for inserting)
+        insert_index = self.find_insert_index(pos)
+        if insert_index is not None:
+            self.points.insert(insert_index, (px, py))
+        else:
+            # 3. Otherwise add as a new endpoint
+            self.points.append((px, py))
+
+        self.update()
+
+    def keyPressEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_Z:
+            if self.points:
+                self.points.pop()
+                self.update()
+
+
+    def find_insert_index(self, pos, threshold=10):
+        if len(self.points) < 2:
+            return None
+
+        px, py = pos.x(), pos.y()
+        for i in range(len(self.points) - 1):  # Only valid segments
+            a = self.points[i]
+            b = self.points[i + 1]
+
+            dist = self.point_to_segment_distance(px, py, *a, *b)
+            if dist < threshold:
+                return i + 1
+        return None
+
+    
+    def point_to_segment_distance(self, px, py, x1, y1, x2, y2):
+        """Returns distance from (px, py) to segment (x1,y1)-(x2,y2)"""
+        line_mag_sq = (x2 - x1)**2 + (y2 - y1)**2
+        if line_mag_sq == 0:
+            return np.hypot(px - x1, py - y1)
+
+        t = max(0, min(1, ((px - x1)*(x2 - x1) + (py - y1)*(y2 - y1)) / line_mag_sq))
+        proj_x = x1 + t * (x2 - x1)
+        proj_y = y1 + t * (y2 - y1)
+        return np.hypot(px - proj_x, py - proj_y)
+
 
     def mouseMoveEvent(self, event):
         if self.dragging_index is not None:
