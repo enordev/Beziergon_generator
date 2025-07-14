@@ -1,0 +1,1 @@
+Generates beziergons (smooth & trendy polygons) based on user input.
