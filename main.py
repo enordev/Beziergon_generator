@@ -45,7 +45,23 @@ class BSplineDrawer(QWidget):
 
     def draw_bspline(self, painter):
         if len(self.points) < 4:
+            pen = QPen(Qt.gray, 1, Qt.DashLine)
+            painter.setPen(pen)
+            if self.points:
+                path = QPainterPath()
+                path.moveTo(*self.points[0])
+                for pt in self.points[1:]:
+                    path.lineTo(*pt)
+                painter.drawPath(path)
+
+            # Draw control points
+            for x, y in self.points:
+                painter.setPen(QPen(Qt.black))
+                painter.drawEllipse(QRectF(x - 3, y - 3, 6, 6))
             return
+
+        # Normal spline drawing as before...
+
 
         pen = QPen(Qt.black, 2)
         painter.setPen(pen)
