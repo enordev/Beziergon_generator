@@ -1,13 +1,15 @@
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QFileDialog
 from PyQt5.QtGui import QPainter, QPen, QPainterPath
 from PyQt5.QtSvg import QSvgGenerator
-from PyQt5.QtCore import Qt, QPointF, QRect
+from PyQt5.QtCore import Qt, QRectF
 import sys
+import numpy as np
+from scipy.interpolate import splprep, splev
 
-class SplineDrawer(QWidget):
+class BSplineDrawer(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Spline Drawer with SVG Export")
+        self.setWindowTitle("Closed B-Spline Drawer")
         self.setGeometry(100, 100, 600, 400)
 
         self.points = []
@@ -18,51 +20,74 @@ class SplineDrawer(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.points.append(event.pos())
+            self.points.append((event.pos().x(), event.pos().y()))
             self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        self.draw_spline(painter)
+        self.draw_bspline(painter)
 
-    def draw_spline(self, painter):
+    def draw_bspline(self, painter):
+        if len(self.points) < 4:
+            return
+
         pen = QPen(Qt.black, 2)
         painter.setPen(pen)
 
-        if len(self.points) >= 4:
-            path = QPainterPath()
-            path.moveTo(self.points[0])
-            i = 1
-            while i + 2 < len(self.points):
-                path.cubicTo(self.points[i], self.points[i + 1], self.points[i + 2])
-                i += 3
-            painter.drawPath(path)
+        path = self.bspline_path(self.points, closed=True)
+        painter.drawPath(path)
 
-        for p in self.points:
-            painter.drawEllipse(p, 3, 3)
+        # Draw control points
+        for x, y in self.points:
+            painter.drawEllipse(QRectF(x - 3, y - 3, 6, 6))
+
+    def bspline_path(self, points, closed=True, resolution=100):
+        # Prepare points
+        x, y = zip(*points)
+
+        if closed:
+            # Repeat points to force continuity at the ends
+            x = list(x) + list(x[:3])
+            y = list(y) + list(y[:3])
+
+        # Parametrize the spline
+        tck, u = splprep([x, y], s=0, per=closed)
+        u_fine = np.linspace(0, 1, resolution)
+        x_fine, y_fine = splev(u_fine, tck)
+
+        # Convert to QPainterPath
+        path = QPainterPath()
+        path.moveTo(x_fine[0], y_fine[0])
+        for xf, yf in zip(x_fine[1:], y_fine[1:]):
+            path.lineTo(xf, yf)
+
+        if closed:
+            path.closeSubpath()
+
+        return path
 
     def save_svg(self):
         if len(self.points) < 4:
             return
 
-        path = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG files (*.svg)")[0]
-        if not path:
+        file_path = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG files (*.svg)")[0]
+        if not file_path:
             return
 
         generator = QSvgGenerator()
-        generator.setFileName(path)
+        generator.setFileName(file_path)
         generator.setSize(self.size())
-        generator.setViewBox(QRect(0, 0, self.width(), self.height()))
-        generator.setTitle("Spline Drawing")
-        generator.setDescription("Spline drawn with PyQt5")
+        generator.setViewBox(self.rect())
+        generator.setTitle("Closed B-Spline Drawing")
+        generator.setDescription("Closed B-spline generated from user points")
 
         painter = QPainter()
         painter.begin(generator)
-        self.draw_spline(painter)
+        self.draw_bspline(painter)
         painter.end()
-        print(f"SVG saved to: {path}")
+        print(f"SVG saved to: {file_path}")
 
 app = QApplication(sys.argv)
-window = SplineDrawer()
+window = BSplineDrawer()
 window.show()
 sys.exit(app.exec_())
