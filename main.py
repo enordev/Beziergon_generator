@@ -34,8 +34,10 @@ class BSplineDrawer(QWidget):
 
         # 2. Check if clicking near a line segment (for inserting)
         insert_index = self.find_insert_index(pos)
+        insert_index, insert_pos = self.find_insert_on_curve(pos)
         if insert_index is not None:
-            self.points.insert(insert_index, (px, py))
+            self.points.insert(insert_index, insert_pos)
+
         else:
             # 3. Otherwise add as a new endpoint
             self.points.append((px, py))
@@ -74,6 +76,64 @@ class BSplineDrawer(QWidget):
         proj_x = x1 + t * (x2 - x1)
         proj_y = y1 + t * (y2 - y1)
         return np.hypot(px - proj_x, py - proj_y)
+    
+    def find_insert_on_curve(self, pos, threshold=10):
+        if len(self.points) < 4:
+            return None, None
+
+        px, py = pos.x(), pos.y()
+
+        x, y = zip(*self.points)
+        try:
+            tck, _ = splprep([x, y], s=0, per=True)
+            u_fine = np.linspace(0, 1, 300)
+            x_fine, y_fine = splev(u_fine, tck)
+        except Exception as e:
+            print("Spline error in insert:", e)
+            return None, None
+
+        min_dist = float('inf')
+        insert_index = None
+        insert_point = None
+
+        for i in range(len(x_fine) - 1):
+            ax, ay = x_fine[i], y_fine[i]
+            bx, by = x_fine[i + 1], y_fine[i + 1]
+            dist = self.point_to_segment_distance(px, py, ax, ay, bx, by)
+
+            if dist < threshold and dist < min_dist:
+                min_dist = dist
+                insert_index = i
+                # Insert point is the projection on segment (ax,ay)-(bx,by)
+                insert_point = self.closest_point_on_segment(px, py, ax, ay, bx, by)
+
+        if insert_index is not None and insert_point:
+            # Estimate where in control points this point best fits
+            # Here, a heuristic: find closest pair in control points
+            best_cp_index = self.estimate_control_insertion_index(insert_point)
+            return best_cp_index, insert_point
+
+        return None, None
+
+    def closest_point_on_segment(self, px, py, x1, y1, x2, y2):
+        """Returns (x, y) of closest point on segment"""
+        dx = x2 - x1
+        dy = y2 - y1
+        if dx == dy == 0:
+            return x1, y1
+        t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
+        return x1 + t * dx, y1 + t * dy
+
+    def estimate_control_insertion_index(self, insert_point):
+        """Finds where to insert the new control point based on distance between control points"""
+        min_dist = float('inf')
+        index = 0
+        for i in range(len(self.points) - 1):
+            dist = self.point_to_segment_distance(*insert_point, *self.points[i], *self.points[i + 1])
+            if dist < min_dist:
+                min_dist = dist
+                index = i + 1
+        return index
 
 
     def mouseMoveEvent(self, event):
